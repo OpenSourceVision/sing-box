@@ -54,15 +54,15 @@ sb
 | 选项 | 说明 | 来源 |
 |------|------|------|
 | 正式版（stable） | 最新正式发布版 | `releases/latest`（自动排除 pre-release） |
-| 测试版（beta） | 最新发布（含 pre-release） | `releases` 列表第一条 |
+| 测试版（beta） | 最新 pre-release（如 1.15.0-alpha.x） | `releases` 列表中第一个 `prerelease: true` 的条目 |
 
 安装 / 更新完成后会显示：
 
 ```
 ==========================================
  内核所在位置   : /usr/local/bin/sing-box
- 配置文件所在位置: /etc/sing-box/config.json
- 配置目录       : /etc/sing-box
+ 配置文件所在位置: /opt/sing-box/config.json
+ 配置目录       : /opt/sing-box
 ==========================================
 提示: 以后在任意位置输入 sb 即可打开本管理工具
 ```
@@ -72,7 +72,7 @@ sb
 | 项目 | 路径 / 说明 |
 |------|-------------|
 | 内核二进制 | `/usr/local/bin/sing-box`（CLI 版，取 `linux-<arch>-glibc` tar.gz） |
-| 配置文件 | `/etc/sing-box/config.json`（已有配置不会被覆盖） |
+| 配置文件 | `/opt/sing-box/config.json`（已有配置不会被覆盖，目录权限开放可直接用 SFTP 编辑） |
 | systemd 服务 | `/etc/systemd/system/sing-box.service`（自动 enable） |
 | 快捷命令 | `/usr/local/bin/sb`（脚本自身，内容变化时自动更新） |
 | 管理工具菜单 | 安装 / 卸载 / 启动 / 停止 / 重启 / 日志 / 更新 |
@@ -104,15 +104,26 @@ systemctl restart sing-box
 
 ## 卸载
 
-管理菜单选 `2. 卸载 sing-box 服务`（会保留 `/etc/sing-box` 配置目录）。如需彻底清理：
+管理菜单选 `2. 卸载 sing-box 服务`（会保留 `/opt/sing-box` 配置目录）。如需彻底清理：
 
 ```sh
 systemctl stop sing-box && systemctl disable sing-box
 rm -f /usr/local/bin/sing-box /usr/local/bin/sb /etc/systemd/system/sing-box.service
-rm -rf /etc/sing-box
+rm -rf /opt/sing-box
 ```
 
 ## 常见问题
+
+### 下载内核很慢 / 直连失败
+
+脚本内置了 GitHub 加速代理（默认 `https://ghfast.top/`），下载失败时会自动回退直连。如需更换或关闭代理，编辑脚本顶部的 `GH_PROXY` 变量，或运行前用环境变量覆盖：
+
+```sh
+export GH_PROXY=""                        # 关闭代理，直连下载
+export GH_PROXY="https://其他镜像地址/"    # 换用其他加速镜像
+```
+
+> 脚本 API 请求（获取版本号）走的是 `api.github.com`，不走该代理；网络完全不通时可配合 `export https_proxy=http://IP:端口` 使用。
 
 ### GitHub 访问受限 / 下载失败
 

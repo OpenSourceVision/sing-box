@@ -8,9 +8,14 @@
 
 RELEASE_REPO="reF1nd/sing-box-releases"
 BIN_PATH="/usr/local/bin/sing-box"
-CONF_DIR="/etc/sing-box"
+# 配置目录放在 /opt/sing-box（目录权限开放，非 root 的 SFTP 账号也可直接编辑配置）
+CONF_DIR="/opt/sing-box"
 CONF_FILE="${CONF_DIR}/config.json"
 SERVICE_FILE="/etc/systemd/system/sing-box.service"
+
+# GitHub 下载加速代理（留空则直连），格式: https://xxx.top/
+# 也可在运行前用环境变量覆盖: export GH_PROXY=""
+GH_PROXY="${GH_PROXY:-https://ghfast.top/}"
 
 # ---------- 状态查询 ----------
 
@@ -40,15 +45,18 @@ is_running() {
 get_tag() {
   local mode="$1"
   local tag=""
-  echo "正在获取最新$([ "$mode" = "beta" ] && echo -n "测试" || echo -n "正式")版本号..."
+  # 进度提示输出到 stderr，避免被命令替换 $( ) 捕获混入版本号
+  printf "正在获取最新%s版本号...\n" "$([ "$mode" = "beta" ] && printf "测试" || printf "正式")" >&2
   if [ "$mode" = "beta" ]; then
+    # 从 releases 列表中取第一个 prerelease=true 的 tag（发布列表按时间排序，
+    # 正式版可能排在 pre-release 之后，所以不能直接取第一条）
     if [ -n "$GITHUB_TOKEN" ]; then
       tag=$(curl -s -H "Authorization: token ${GITHUB_TOKEN}" \
-        "https://api.github.com/repos/${RELEASE_REPO}/releases" \
-        | grep '"tag_name"' | head -n 1 | sed 's/.*"v\(.*\)".*/\1/')
+        "https://api.github.com/repos/${RELEASE_REPO}/releases?per_page=30" \
+        | awk '/"tag_name"/{tag=$0; sub(/.*"tag_name": *"/,"",tag); sub(/".*/,"",tag); sub(/^v/,"",tag)} /"prerelease": *true/{print tag; exit}')
     else
-      tag=$(curl -s "https://api.github.com/repos/${RELEASE_REPO}/releases" \
-        | grep '"tag_name"' | head -n 1 | sed 's/.*"v\(.*\)".*/\1/')
+      tag=$(curl -s "https://api.github.com/repos/${RELEASE_REPO}/releases?per_page=30" \
+        | awk '/"tag_name"/{tag=$0; sub(/.*"tag_name": *"/,"",tag); sub(/".*/,"",tag); sub(/^v/,"",tag)} /"prerelease": *true/{print tag; exit}')
     fi
   else
     if [ -n "$GITHUB_TOKEN" ]; then
@@ -86,8 +94,21 @@ do_install() {
   local url="https://github.com/${RELEASE_REPO}/releases/download/v${tag}/sing-box-${tag}-linux-${arch}-glibc.tar.gz"
   local tmpfile="/tmp/sing-box-${tag}.tar.gz"
 
-  echo "下载: $url"
-  curl --fail -Lo "$tmpfile" "$url" || { echo "下载失败"; return 1; }
+  # 走 GitHub 加速代理下载；失败自动回退直连
+  if [ -n "$GH_PROXY" ]; then
+    echo "下载（经加速代理 ${GH_PROXY}）:"
+    echo "  ${GH_PROXY}${url}"
+    if curl --fail -Lo "$tmpfile" "${GH_PROXY}${url}"; then
+      :
+    else
+      echo "加速代理下载失败，回退直连 GitHub..."
+      echo "下载: $url"
+      curl --fail -Lo "$tmpfile" "$url" || { echo "下载失败"; return 1; }
+    fi
+  else
+    echo "下载: $url"
+    curl --fail -Lo "$tmpfile" "$url" || { echo "下载失败"; return 1; }
+  fi
 
   echo "安装中..."
   tar -xzf "$tmpfile" -C /tmp
@@ -106,10 +127,12 @@ do_install() {
 EOF
     echo "已生成默认配置: $CONF_FILE（请自行修改）"
   fi
+  # 开放配置目录权限，方便非 root 的 SFTP 账号直接编辑/上传配置
+  chmod 777 "$CONF_DIR"
+  chmod 666 "$CONF_FILE"
 
-  # systemd 服务（不覆盖已有服务文件）
-  if [ ! -f "$SERVICE_FILE" ]; then
-    cat > "$SERVICE_FILE" <<EOF
+  # systemd 服务（每次安装都重新生成，确保路径始终与当前脚本一致）
+  cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=sing-box service
 Documentation=https://sing-box.sagernet.org
@@ -127,12 +150,10 @@ LimitNOFILE=infinity
 [Install]
 WantedBy=multi-user.target
 EOF
-  fi
-
   systemctl daemon-reload
-  systemctl enable sing-box --now
+  systemctl enable sing-box
   echo ""
-  echo "安装完成！（$([ "$mode" = "beta" ] && echo -n "测试版" || echo -n "正式版" )）"
+  echo "安装完成！（$([ "$mode" = "beta" ] && echo -n "测试版" || echo -n "正式版" )），服务未启动（已设开机自启）"
   "$BIN_PATH" version | head -n 1
   echo ""
   echo "=========================================="
@@ -141,7 +162,7 @@ EOF
   echo " 配置目录       : $CONF_DIR"
   echo "=========================================="
   echo "提示: 以后在任意位置输入 sb 即可打开本管理工具"
-  echo "下一步: 编辑 $CONF_FILE 后执行 systemctl restart sing-box"
+  echo "下一步: 编辑 $CONF_FILE，然后选择菜单 3 启动服务（或 systemctl start sing-box）"
 }
 
 do_uninstall() {
@@ -236,6 +257,16 @@ show_menu() {
 }
 
 while true; do
+  # 管理 systemd 服务需要 root；非 root 时自动用 sudo 提权重启本脚本
+  if [ "$(id -u)" != "0" ]; then
+    if command -v sudo >/dev/null 2>&1; then
+      exec sudo bash "$0"
+    else
+      echo "错误: 管理 sing-box 需要 root 权限。"
+      echo "请先用 su - 切换到 root，再运行本脚本。"
+      exit 1
+    fi
+  fi
   ensure_sb_command
   show_menu
   read -r choice
