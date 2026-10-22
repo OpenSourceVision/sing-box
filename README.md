@@ -10,12 +10,7 @@
 bash <(curl -fsSL https://raw.githubusercontent.com/OpenSourceVision/sing-box/main/sing-box.sh)
 ```
 
-> ⚠️ 不建议用 `curl ... | bash` 的方式运行：管道方式会导致交互式菜单无法正常输入。请使用上面的 `bash <(...)` 写法，或先下载再执行：
->
-> ```sh
-> curl -fsSL -o /tmp/sing-box.sh https://raw.githubusercontent.com/OpenSourceVision/sing-box/main/sing-box.sh
-> bash /tmp/sing-box.sh
-> ```
+
 
 国内网络不好时，可用 jsDelivr CDN：
 
@@ -123,35 +118,7 @@ export GH_PROXY=""                        # 关闭代理，直连下载
 export GH_PROXY="https://其他镜像地址/"    # 换用其他加速镜像
 ```
 
-> 脚本 API 请求（获取版本号）走的是 `api.github.com`，不走该代理；网络完全不通时可配合 `export https_proxy=http://IP:端口` 使用。
 
-### GitHub 访问受限 / 下载失败
-
-设置代理后运行（按实际代理地址修改）：
-
-```sh
-export https_proxy=http://192.168.110.110:7890
-sb
-```
-
-或使用 GitHub Token 提高 API 限额（可选）：
-
-```sh
-export GITHUB_TOKEN=ghp_你的token
-sb
-```
-
-### 提示获取版本号失败
-
-网络无法访问 `api.github.com`，先配置代理或 GITHUB_TOKEN，或改用上面的 jsDelivr 入口下载脚本本体。
-
-### 下载 404
-
-对应版本的架构包不存在或版本号有变，可查看所有可用版本：
-
-```sh
-curl -s https://api.github.com/repos/reF1nd/sing-box-releases/releases | grep tag_name
-```
 
 ## 致谢
 
